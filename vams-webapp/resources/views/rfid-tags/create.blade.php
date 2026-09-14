@@ -1,0 +1,13 @@
+@extends('layouts.app')
+
+@section('content')
+<div class="mx-auto max-w-3xl">
+    <h1 class="text-2xl font-bold text-gray-900 mb-6">Add RFID Tag</h1>
+
+    <div class="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-lg p-8">
+        <form method="POST" action="{{ route('rfid-tags.store') }}">
+            @include('rfid-tags._form')
+        </form>
+    </div>
+</div>
+@endsection

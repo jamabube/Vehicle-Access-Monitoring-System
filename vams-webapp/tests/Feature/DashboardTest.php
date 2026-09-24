@@ -212,6 +212,57 @@ class DashboardTest extends TestCase
         $this->assertStringContainsString('LIVE123', $response->json('inside_html'));
     }
 
+    public function test_it_warns_when_a_vehicle_did_not_exit_within_a_day(): void
+    {
+        $this->seedRolesAndPermissions();
+        $admin = $this->createUserWithRole('administrator');
+
+        // Entered two days ago and still inside — an overstay.
+        Vehicle::factory()->create([
+            'plate_number' => 'STUCK01',
+            'current_state' => 'inside',
+            'last_seen_at' => now()->subDays(2),
+        ]);
+
+        $response = $this->actingAs($admin)->get(route('dashboard'));
+
+        $response->assertOk();
+        $response->assertSee('still inside');
+        $response->assertSee('not yet exited');
+    }
+
+    public function test_a_recently_entered_vehicle_is_not_flagged_as_overstaying(): void
+    {
+        $this->seedRolesAndPermissions();
+        $admin = $this->createUserWithRole('administrator');
+
+        Vehicle::factory()->create([
+            'plate_number' => 'FRESH01',
+            'current_state' => 'inside',
+            'last_seen_at' => now()->subHour(),
+        ]);
+
+        $response = $this->actingAs($admin)->get(route('dashboard'));
+
+        $response->assertOk();
+        $response->assertDontSee('not yet exited');
+    }
+
+    public function test_the_refresh_endpoint_reports_the_overstay_count(): void
+    {
+        $this->seedRolesAndPermissions();
+        $admin = $this->createUserWithRole('administrator');
+
+        Vehicle::factory()->create(['current_state' => 'inside', 'last_seen_at' => now()->subDays(3)]);
+        Vehicle::factory()->create(['current_state' => 'inside', 'last_seen_at' => now()]);
+
+        $response = $this->actingAs($admin)->getJson(route('dashboard.gate-activity'));
+
+        $response->assertOk();
+        $response->assertJsonPath('overstay_count', 1);
+        $response->assertJsonPath('inside_count', 2);
+    }
+
     public function test_security_officer_can_watch_the_gate_log(): void
     {
         $this->seedRolesAndPermissions();

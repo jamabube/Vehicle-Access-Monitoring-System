@@ -20,6 +20,23 @@
         </div>
     </div>
 
+    <!-- Overstay warning: vehicles that entered but did not exit within the
+         configured window (default one day). Hidden when there are none; the
+         live refresh in dashboard.js shows/updates it without a page reload. -->
+    <div data-overstay-banner @class(['flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4']) @if ($overstayCount === 0) hidden @endif>
+        <svg class="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+        </svg>
+        <div>
+            <p class="text-sm font-semibold text-red-800">
+                <span data-overstay-count>{{ $overstayCount }}</span>
+                <span data-overstay-noun>{{ \Illuminate\Support\Str::plural('vehicle', $overstayCount) }}</span>
+                still inside &mdash; not exited within {{ $overstayHours % 24 === 0 ? ($overstayHours / 24) . ' day' . ($overstayHours / 24 > 1 ? 's' : '') : $overstayHours . ' hours' }}
+            </p>
+            <p class="mt-0.5 text-xs text-red-700">See the highlighted rows in “Inside Now”. Check whether these vehicles have left without being read, or are genuinely still on the premises.</p>
+        </div>
+    </div>
+
     <!-- Today's totals -->
     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <div class="rounded-lg bg-white p-4 shadow-sm ring-1 ring-gray-900/5">

@@ -33,6 +33,14 @@ return [
     'rate_limit_per_minute' => (int) env('RFID_RATE_LIMIT_PER_MINUTE', 120),
 
     /*
+     * How long a vehicle may stay inside before the system flags it. A vehicle
+     * that entered but has not exited within this many hours is treated as an
+     * "overstay": the dashboard warns about it, and `vehicles:flag-overstays`
+     * records a system-log warning. 24 hours means "did not exit within a day".
+     */
+    'overstay_alert_hours' => (int) env('RFID_OVERSTAY_ALERT_HOURS', 24),
+
+    /*
     |--------------------------------------------------------------------------
     | RFID Listener / Device Service
     |--------------------------------------------------------------------------

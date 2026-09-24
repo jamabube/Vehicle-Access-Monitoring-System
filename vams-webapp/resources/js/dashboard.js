@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const inside = root.querySelector('[data-vehicles-inside]');
     const liveDot = root.querySelector('[data-live-dot]');
     const liveLabel = root.querySelector('[data-live-label]');
+    const overstayBanner = root.querySelector('[data-overstay-banner]');
 
     // Two update paths, on purpose:
     //   - WebSocket (Reverb) pushes the instant a tag is read.
@@ -30,6 +31,17 @@ document.addEventListener('DOMContentLoaded', function () {
         root.querySelectorAll('[data-stat="' + name + '"]').forEach(function (el) {
             el.textContent = Number(value).toLocaleString();
         });
+    }
+
+    // Show/hide and update the "did not exit within a day" warning banner.
+    function setOverstay(count) {
+        if (!overstayBanner) return;
+        const n = Number(count) || 0;
+        overstayBanner.hidden = n === 0;
+        const countEl = overstayBanner.querySelector('[data-overstay-count]');
+        const nounEl = overstayBanner.querySelector('[data-overstay-noun]');
+        if (countEl) countEl.textContent = n.toLocaleString();
+        if (nounEl) nounEl.textContent = n === 1 ? 'vehicle' : 'vehicles';
     }
 
     function offline(message) {
@@ -81,6 +93,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 setStat('authorized', data.today.authorized);
                 setStat('denied', data.today.denied);
                 setStat('inside', data.inside_count);
+                setOverstay(data.overstay_count);
 
                 online();
             })

@@ -29,5 +29,11 @@ compose-log.txt
 Thumbs.db
 *.tmp
 
+# Large media/capture files not needed in the repo (screen recordings, etc.)
+*.mp4
+*.m4a
+*.mov
+*.avi
+
 # Embedded git repo (dev harness spec) — not part of the capstone upload
 agent-spec/

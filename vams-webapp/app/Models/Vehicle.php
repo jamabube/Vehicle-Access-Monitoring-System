@@ -129,4 +129,40 @@ class Vehicle extends Model
     {
         return $this->current_state === 'inside';
     }
+
+    /**
+     * The moment after which an inside vehicle counts as an "overstay".
+     * Reads the threshold from config so it is tuned in one place.
+     */
+    public static function overstayCutoff(?int $hours = null): \Illuminate\Support\Carbon
+    {
+        $hours = $hours ?? (int) config('rfid.overstay_alert_hours', 24);
+
+        return now()->subHours($hours);
+    }
+
+    /**
+     * True when the vehicle is still on the premises and entered longer ago
+     * than the overstay threshold — i.e. it did not exit within the allowed
+     * time (by default, one day). While a vehicle sits inside, last_seen_at is
+     * its entry time, so it is the right basis for "how long has it been in".
+     */
+    public function hasOverstayed(?int $hours = null): bool
+    {
+        return $this->isInside()
+            && $this->last_seen_at !== null
+            && $this->last_seen_at->lt(self::overstayCutoff($hours));
+    }
+
+    /**
+     * Scope: vehicles currently inside that entered before the overstay cutoff.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<Vehicle>  $query
+     */
+    public function scopeOverstaying(\Illuminate\Database\Eloquent\Builder $query, ?int $hours = null): void
+    {
+        $query->where('current_state', 'inside')
+            ->whereNotNull('last_seen_at')
+            ->where('last_seen_at', '<', self::overstayCutoff($hours));
+    }
 }

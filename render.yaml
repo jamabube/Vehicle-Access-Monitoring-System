@@ -1,0 +1,155 @@
+services:
+  # --- Web: serves the app + REST/API endpoints ---
+  - type: web
+    name: vams-web
+    runtime: docker
+    dockerfilePath: ./vams-webapp/Dockerfile
+    dockerContext: ./vams-webapp
+    plan: free
+    region: singapore
+    branch: main
+    healthCheckPath: /up
+    preDeployCommand: php artisan migrate --force
+    envVars:
+      - key: APP_NAME
+        value: "Vehicle Access Monitoring System"
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_KEY
+        generateValue: true
+      # Set to this service's onrender.com URL (or custom domain) AFTER first
+      # deploy, e.g. https://vams-web.onrender.com — see DEPLOYMENT.md.
+      - key: APP_URL
+        sync: false
+      - key: APP_TIMEZONE
+        value: Asia/Manila
+      - key: LOG_CHANNEL
+        value: stack
+      - key: LOG_LEVEL
+        value: error
+      # --- External MySQL (Railway/Aiven/PlanetScale/etc — fill in Render Dashboard) ---
+      - key: DB_CONNECTION
+        value: mysql
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "3306"
+      - key: DB_DATABASE
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: SESSION_DRIVER
+        value: database
+      - key: SESSION_SECURE_COOKIE
+        value: "true"
+      - key: SESSION_SAME_SITE
+        value: lax
+      - key: QUEUE_CONNECTION
+        value: database
+      - key: CACHE_STORE
+        value: database
+      - key: BROADCAST_CONNECTION
+        value: reverb
+      - key: REVERB_APP_ID
+        generateValue: true
+      - key: REVERB_APP_KEY
+        generateValue: true
+      - key: REVERB_APP_SECRET
+        generateValue: true
+      # Set to the vams-reverb service's onrender.com hostname (no scheme),
+      # e.g. vams-reverb.onrender.com — see DEPLOYMENT.md.
+      - key: REVERB_HOST
+        sync: false
+      - key: REVERB_PORT
+        value: "443"
+      - key: REVERB_SERVER_PORT
+        value: "10000"
+      - key: REVERB_SCHEME
+        value: https
+      - key: VITE_REVERB_APP_KEY
+        sync: false
+      - key: VITE_REVERB_HOST
+        sync: false
+      - key: VITE_REVERB_PORT
+        value: "443"
+      - key: VITE_REVERB_SCHEME
+        value: https
+      - key: RFID_HMAC_TOLERANCE_SECONDS
+        value: "30"
+      - key: RFID_NONCE_TTL_SECONDS
+        value: "600"
+      - key: RFID_DEBOUNCE_SECONDS
+        value: "20"
+      - key: RFID_RATE_LIMIT_PER_MINUTE
+        value: "120"
+
+  # --- Queue worker: processes queued jobs (database driver) ---
+  # NOTE: Render's free plan does not support the "worker" service type.
+  # This runs on the lowest paid plan (starter). To stay 100% free, delete
+  # this service and instead schedule `php artisan queue:work
+  # --stop-when-empty` via a Render Cron Job on the free tier.
+  - type: worker
+    name: vams-queue
+    runtime: docker
+    dockerfilePath: ./vams-webapp/Dockerfile
+    dockerContext: ./vams-webapp
+    dockerCommand: php artisan queue:work --tries=3 --timeout=90 --sleep=3
+    plan: starter
+    region: singapore
+    branch: main
+    envVarGroups:
+      - vams-shared
+
+  # --- Reverb: real-time WebSocket broadcast server for the dashboard ---
+  # Also not free-tier eligible if you need it running 24/7 without sleeping;
+  # web services on the free plan sleep after 15 min idle, which will drop
+  # live dashboard updates until the next request wakes it.
+  - type: web
+    name: vams-reverb
+    runtime: docker
+    dockerfilePath: ./vams-webapp/Dockerfile
+    dockerContext: ./vams-webapp
+    dockerCommand: php artisan reverb:start --host=0.0.0.0 --port=10000
+    plan: starter
+    region: singapore
+    branch: main
+    envVarGroups:
+      - vams-shared
+
+envVarGroups:
+  - name: vams-shared
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_KEY
+        sync: false
+      - key: DB_CONNECTION
+        value: mysql
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "3306"
+      - key: DB_DATABASE
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: QUEUE_CONNECTION
+        value: database
+      - key: CACHE_STORE
+        value: database
+      - key: BROADCAST_CONNECTION
+        value: reverb
+      - key: REVERB_APP_ID
+        sync: false
+      - key: REVERB_APP_KEY
+        sync: false
+      - key: REVERB_APP_SECRET
+        sync: false
+      - key: REVERB_SERVER_PORT
+        value: "10000"

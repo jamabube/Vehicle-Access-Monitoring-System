@@ -45,11 +45,14 @@ class DashboardController extends Controller implements HasMiddleware
     public function index(): View
     {
         [$gateActivity, $showingToday] = $this->gateActivityLog();
+        $vehiclesInside = $this->vehiclesInside();
 
         return view('dashboard', [
             'gateActivity' => $gateActivity,
             'showingToday' => $showingToday,
-            'vehiclesInside' => $this->vehiclesInside(),
+            'vehiclesInside' => $vehiclesInside,
+            'overstayCount' => $this->overstayCount($vehiclesInside),
+            'overstayHours' => (int) config('rfid.overstay_alert_hours', 24),
             'todayStats' => $this->todayStats(),
             'stats' => [
                 'employees' => Employee::count(),
@@ -71,10 +74,13 @@ class DashboardController extends Controller implements HasMiddleware
     {
         [$gateActivity, $showingToday] = $this->gateActivityLog();
         $vehiclesInside = $this->vehiclesInside();
+        $overstayCount = $this->overstayCount($vehiclesInside);
 
         return response()->json([
             'today' => $this->todayStats(),
             'inside_count' => $vehiclesInside->count(),
+            'overstay_count' => $overstayCount,
+            'overstay_hours' => (int) config('rfid.overstay_alert_hours', 24),
             'activity_html' => view('dashboard._gate-activity', [
                 'gateActivity' => $gateActivity,
                 'showingToday' => $showingToday,
@@ -83,6 +89,18 @@ class DashboardController extends Controller implements HasMiddleware
                 'vehiclesInside' => $vehiclesInside,
             ])->render(),
         ]);
+    }
+
+    /**
+     * How many of the currently-inside vehicles have overstayed (entered but
+     * did not exit within the configured window). Computed from the loaded
+     * collection so it needs no extra query.
+     *
+     * @param  Collection<int, Vehicle>  $vehiclesInside
+     */
+    private function overstayCount(Collection $vehiclesInside): int
+    {
+        return $vehiclesInside->filter->hasOverstayed()->count();
     }
 
     /**

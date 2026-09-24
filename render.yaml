@@ -29,19 +29,25 @@ services:
         value: stack
       - key: LOG_LEVEL
         value: error
-      # --- External MySQL (Railway/Aiven/PlanetScale/etc — fill in Render Dashboard) ---
+      # --- Aiven MySQL (fill in Render Dashboard from Aiven's "Overview" tab) ---
       - key: DB_CONNECTION
         value: mysql
       - key: DB_HOST
         sync: false
+      # Aiven does NOT use the default 3306 — it assigns a random port per
+      # service (e.g. 25060). Copy the exact port from Aiven's Overview tab.
       - key: DB_PORT
-        value: "3306"
+        sync: false
       - key: DB_DATABASE
         sync: false
       - key: DB_USERNAME
         sync: false
       - key: DB_PASSWORD
         sync: false
+      # Aiven enforces TLS on MySQL connections. Points at the CA cert
+      # uploaded as a Render Secret File — see DEPLOYMENT.md Step 2.
+      - key: MYSQL_ATTR_SSL_CA
+        value: /etc/secrets/aiven-ca.pem
       - key: SESSION_DRIVER
         value: database
       - key: SESSION_SECURE_COOKIE
@@ -132,13 +138,15 @@ envVarGroups:
       - key: DB_HOST
         sync: false
       - key: DB_PORT
-        value: "3306"
+        sync: false
       - key: DB_DATABASE
         sync: false
       - key: DB_USERNAME
         sync: false
       - key: DB_PASSWORD
         sync: false
+      - key: MYSQL_ATTR_SSL_CA
+        value: /etc/secrets/aiven-ca.pem
       - key: QUEUE_CONNECTION
         value: database
       - key: CACHE_STORE

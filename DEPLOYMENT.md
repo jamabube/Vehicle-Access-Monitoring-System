@@ -54,19 +54,66 @@ as-is unless you split `vams-webapp/` into its own standalone repo, in
 which case change both to `./Dockerfile` and `.` and move `render.yaml`
 into that new repo's root.
 
-## Step 2 — Provision an external MySQL database
+## Step 2 — Provision Aiven for MySQL
 
 Render Postgres is free-tier eligible; Render's own MySQL offering is not.
 Since this app uses `mysql`/`utf8mb4` migrations (see
-`context/SCHEMA.md`), the fastest path is an external managed MySQL:
+`context/SCHEMA.md`), we use **Aiven for MySQL** as the external database.
 
-- **Railway** (free trial credits) — https://railway.app → New Project →
-  Provision MySQL → copy `MYSQLHOST`, `MYSQLPORT`, `MYSQLDATABASE`,
-  `MYSQLUSER`, `MYSQLPASSWORD`.
-- **Aiven** (free tier for MySQL) — https://aiven.io
-- Any other MySQL 8-compatible host reachable from the public internet.
+### 2a. Create the service
 
-Keep the four credentials (host, database, username, password) handy for
+1. Sign in at https://console.aiven.io (or create a free account).
+2. **Services → Create service → MySQL**.
+3. Pick a **Service tier**:
+   - **Free tier** (`Hobbyist`/`Free-1-1GB`, cloud auto-selected, no region
+     choice) is enough for a capstone demo but auto-suspends after periods
+     of inactivity and cannot pick region/cloud.
+   - A paid **Startup-4GB** (or similar) plan on `google-europe-west3` /
+     the region closest to your Render `region: singapore` setting reduces
+     latency and avoids the free-tier auto-pause. Pick this if the demo
+     must stay reachable 24/7.
+4. Give it a name (e.g. `vams-mysql`) and click **Create service**.
+5. Wait for status to flip from **Rebuilding** to **Running** (a couple of
+   minutes).
+
+### 2b. Collect connection details
+
+Open the service → **Overview** tab → **Connection information** panel.
+Aiven shows these fields (copy them exactly — do **not** guess the port,
+Aiven never uses the MySQL default `3306`):
+
+| Aiven field | Maps to Render env var |
+|---|---|
+| Host | `DB_HOST` |
+| Port | `DB_PORT` (something like `25060`, service-specific) |
+| Database name (`defaultdb` by default) | `DB_DATABASE` |
+| User (`avnadmin` by default) | `DB_USERNAME` |
+| Password | `DB_PASSWORD` |
+
+Aiven **enforces TLS** on every MySQL connection. On the same Overview
+page there's a **CA Certificate** download link (sometimes under
+"Connection information → Show all" or a separate **CA Certificate**
+button) — download it as `ca.pem`. You'll upload this to Render as a
+**Secret File** per service in Step 4a; Laravel's `config/database.php`
+already wires `MYSQL_ATTR_SSL_CA` (added in `render.yaml`) into PDO's
+`MYSQL_ATTR_SSL_CA` option, so no code changes are needed — just make sure
+the env var and the uploaded secret file path match
+(`/etc/secrets/aiven-ca.pem`).
+
+### 2c. Create the application database (optional)
+
+Aiven's default database is `defaultdb`. You can use that directly (set
+`DB_DATABASE=defaultdb`) or create a dedicated one:
+
+```sql
+-- via Aiven's Query editor tab, or `mysql --host=... --ssl-ca=ca.pem`
+CREATE DATABASE vams_production;
+```
+
+If you create a dedicated database, set `DB_DATABASE=vams_production`
+instead of `defaultdb`.
+
+Keep the credentials (host, database, username, password) handy for
 Step 4.
 
 ## Step 3 — Push this repo to GitHub
@@ -84,12 +131,15 @@ excludes it at both the root and inside `vams-webapp/`.
 ## Step 4 — Create the Blueprint on Render
 
 1. Go to https://dashboard.render.com → **New** → **Blueprint**.
-2. Connect the `jamabube/capstone` GitHub repo, branch `main`.
+2. Connect the `jamabube/Vehicle-Access-Monitoring-System` GitHub repo,
+   branch `main`.
 3. Render detects `render.yaml` and shows the 3 services
    (`vams-web`, `vams-queue`, `vams-reverb`) plus the `vams-shared` group.
 4. Click **Apply**. Render will prompt you to fill in every env var marked
    `sync: false` before the first deploy:
-   - `DB_HOST`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (from Step 2)
+   - `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`
+     (from Step 2b — paste the exact Aiven values, especially `DB_PORT`,
+     which is **not** `3306`)
    - `APP_URL` — leave blank for now, come back after first deploy (Step 6)
    - `REVERB_HOST`, `VITE_REVERB_HOST`, `VITE_REVERB_APP_KEY` — same, come
      back after first deploy
@@ -97,14 +147,42 @@ excludes it at both the root and inside `vams-webapp/`.
      separate values from the `vams-web` service's own `DB_*` — Render
      doesn't auto-share across services without `sync: false` prompts)
 
+### 4a. Upload the Aiven CA certificate as a Secret File (per service)
+
+`render.yaml` cannot embed file *contents* — Blueprints only declare env
+vars, so the `ca.pem` you downloaded in Step 2b has to be uploaded
+manually, once per service, **after** the Blueprint creates the services:
+
+1. Open **vams-web** → **Environment** tab → **Secret Files** section →
+   **Add Secret File**.
+2. Filename: `aiven-ca.pem`. Paste the full contents of the `ca.pem` you
+   downloaded from Aiven (including the `-----BEGIN CERTIFICATE-----` /
+   `-----END CERTIFICATE-----` lines). Save.
+3. Repeat the same two steps for **vams-queue** and **vams-reverb** (both
+   also connect to the database directly, via the `vams-shared` group).
+4. Confirm `MYSQL_ATTR_SSL_CA=/etc/secrets/aiven-ca.pem` is present on all
+   three services (it's already baked into `render.yaml`'s `envVars` /
+   `vams-shared` group) — Render mounts secret files at
+   `/etc/secrets/<filename>` at runtime, which is what that env var points
+   to.
+5. Trigger **Manual Deploy** on each of the three services after adding
+   their secret file (secret file changes don't auto-redeploy).
+
 ## Step 5 — First deploy
 
 Render builds all three Docker images and deploys `vams-web` first (it has
 the `preDeployCommand: php artisan migrate --force`, which creates your
-schema on the external MySQL database on the very first deploy). Watch the
+schema on the Aiven MySQL database on the very first deploy). Watch the
 **Logs** tab for each service; a successful `vams-web` deploy ends with
 Laravel's dev server bound to Render's `$PORT` and `/up` returning 200
 (Render's health check).
+
+If the `preDeployCommand` fails with an SSL/TLS handshake error (e.g.
+`SQLSTATE[HY000] [2002] ... SSL connection error` or
+`General error: 1105 SSL connection error`), it almost always means the
+`aiven-ca.pem` Secret File wasn't added yet, or the deploy ran before you
+completed Step 4a — add the secret file and trigger **Manual Deploy**
+again.
 
 ## Step 6 — Wire up the real URLs (second deploy)
 
@@ -128,16 +206,31 @@ env vars aren't auto-linked to Reverb's generated secret.
 
 ## Step 7 — Seed an admin user / RFID reader credentials
 
-Use Render's **Shell** tab (or a one-off job) on `vams-web`:
+`vams-webapp/database/seeders/DatabaseSeeder.php` already chains
+`PermissionSeeder → RoleSeeder → CodeSettingSeeder → RfidReaderSeeder` and
+then creates a default admin user (`admin@vams.test` / `password`), so the
+simplest path is to run the default seeder via Render's **Shell** tab (or
+a one-off job) on `vams-web`:
 
 ```
+php artisan db:seed --force
+```
+
+This is idempotent-ish (`User::firstOrCreate` on email) but the role/
+permission/RFID reader seeders may not all be, so only run it once against
+a fresh database. **Immediately change the default admin password** after
+first login — `admin@vams.test` / `password` is a placeholder credential
+you should not leave live in production.
+
+If you ever need to re-run just one seeder (e.g. after adding a new RFID
+reader row), the individual seeder classes are:
+
+```
+php artisan db:seed --class=PermissionSeeder
 php artisan db:seed --class=RoleSeeder
+php artisan db:seed --class=CodeSettingSeeder
 php artisan db:seed --class=RfidReaderSeeder
 ```
-
-(Check `vams-webapp/database/seeders/` for the actual seeder names in
-your codebase before running — list them with `php artisan db:seed --help`
-if unsure, or read `context/TASKS.md` / `context/SCHEMA.md`.)
 
 ## Step 8 — Point the on-site RFID listener at the live API
 
@@ -165,9 +258,10 @@ its HMAC-signed HTTP POSTs cross the internet to the deployed app.
   drop `vams-reverb` and accept the dashboard loses live push updates
   (verify no code path hard-requires a live WebSocket connection before
   doing this).
-- The external MySQL provider (Railway/Aiven) has its own free-tier
-  limits (Railway: trial credits expire; Aiven: free tier auto-pauses
-  after a few weeks of inactivity).
+- Aiven's free MySQL tier auto-pauses after a sustained period of
+  inactivity (the service must be manually resumed from the Aiven
+  Console); a paid Aiven plan (billed hourly, cancel anytime) avoids this
+  if the deployment needs to stay reachable on demand.
 
 ## Troubleshooting
 
@@ -186,3 +280,13 @@ its HMAC-signed HTTP POSTs cross the internet to the deployed app.
   (Step 8) is repointed at the deployed API and the physical reader is
   back online — see `context/RULES.md` for the HMAC handshake it must
   satisfy.
+- **`SQLSTATE[HY000] [2002]` / SSL connection error on any of the three
+  services**: the `aiven-ca.pem` Secret File (Step 4a) is missing on that
+  specific service, or `DB_PORT` was copy-pasted wrong (Aiven's port is
+  never `3306`) — check the exact host/port/CA path in the Aiven Console's
+  Overview tab and re-verify all three services (`vams-web`, `vams-queue`,
+  `vams-reverb`) individually, since each needs its own copy of the secret
+  file.
+- **Aiven service shows "Rebuilding" or is unreachable**: the free tier
+  auto-pauses after inactivity — resume it from the Aiven Console, wait
+  for **Running**, then retry the Render deploy.

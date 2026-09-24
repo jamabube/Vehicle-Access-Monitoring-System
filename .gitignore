@@ -37,3 +37,12 @@ Thumbs.db
 
 # Embedded git repo (dev harness spec) — not part of the capstone upload
 agent-spec/
+
+# Non-system assets: capstone manuscript/presentation drafts, vendor RFID SDK
+# dump, misc guides, and local editor config — none of this is part of the
+# running VAMS application (vams-webapp/), so keep it local-only.
+*.docx
+*.pptx
+rfid reader sdk/
+Documentation/
+.claude/
